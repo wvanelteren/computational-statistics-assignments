@@ -1,0 +1,144 @@
+---
+title: "Computational Statistics Assignment 1"
+author: "Wouter van Elteren | SNR:2004379 | ANR:429898"
+date: "Group 24"
+output: 
+  pdf_document:
+    extra_dependencies:
+      algorithm2e: [ruled, vlined, linesnumbered]
+mainfont: Times New Roman
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## Systems Biology of the Influenza Vaccine
+
+In this exercise, we consider data that resulted from a systems biology study on vaccination against influenza (Nakaya et al., 2011). One of the aims of this study was to predict vaccine efficacy with micro-array gene expression data obtained soon after vaccination. The authors made data for two seasons, 2007 and 2008, publicly available. Here, we focus on a subset of 20 predictor variables (corresponding to genes with the following official symbols: RFC2, HSPA6, PAX8, GUCA1A, THRA, PTPN21, CCL5, CYP2E1, EPHB3, ESRRA, IL17RA, SERPIND1, IFNGR2, MAPK1, IL25, CTSG, FOXP3, STAT3, CCL2, IRF8). The subset obtained from the 2008 data can be found in subset2008.txt while the subset for the 2007 data can be found in subset2007.txt. The corresponding outcome variable, namely the vaccine efficacy score, is contained in the files TITER2008_centered.txt and TITER2007_centered.txt. The aim of this exercise is to obtain an estimate of the prediction error of the best possible linear regression model containing at most four predictors. Use the 2008 data to obtain this estimate. Read the data into R using the read.table command. Then convert the data to a matrix using as.matrix which will allow you to easily select particular rows or columns from your data.
+
+```{r}
+df <- read.table("subset2008.txt")
+df <- as.matrix(df)
+```
+
+
+## Question 1
+
+Among how many regression models will the best model be selected? Show how you obtained this number.
+
+
+> Considering that there are 20 possible predictors and a model can incorporate 4 predictors at most:
+
+> Number of models with 1 predictor: 20
+> Number of models with 2 predictors: 
+
+```{r}
+choose(20, 2)
+```
+> Number of models with 3 predictors: 
+
+```{r}
+choose(20, 3)
+```
+> Number of models with 4 predictors:
+
+```{r}
+choose(20, 4)
+```
+> Total number of models = 20 + 190 + 1140 + 4845 = 6195
+
+## Question 2
+
+Implement yourself(!) a nested leave-one-out cross-validation procedure to estimate the prediction error (outer leave-one-out loop) of the selected best model (inner leave-one-out loop). We start with the inner loop (first two bullet points here below) to tackle the model selection part.
+
+### 2a. MODEL SELECTION (plain non-nested leave-one-out cross-validation)
+
+Obtain the best regression model by use of leave-one-out cross-validation on the 2008 data (note: this is plain leave-one-out and not nested leave-one-out cross-validation). Make a histogram of the cross-validation errors obtained for each of the models and report the set of predictor variables that -- together - have the lowest cross-validation error. To construct all the possible regression models of at most 4 predictor variables, it is strongly recommended to make use of the combn R function; then, call the predictor variables by relying on column indices. Check Section 3.6 of the Introduction to Statistical Learning for explanations on how to use R for regression analysis. Compute the predicted value yourself instead of using the predict function: Let y be the vector of scores on the outcome, X the matrix containing the predictor scores and test the index for the left out observation, then the following code gives the predicted score for the left out observation:
+
+```{r echo=FALSE}
+yhattest <- c(1, X[test, ]) %*% lm(y[- test] ~ X[-test, ])$coef
+```
+
+```{r}
+# All possible predictor variable combinations
+preds1 <- combn(20, 1, simplify = FALSE)
+preds2 <- combn(20, 2, simplify = FALSE)
+preds3 <- combn(20, 3, simplify = FALSE)
+preds4 <- combn(20, 4, simplify = FALSE)
+comb <- c(preds1, preds2, preds3, preds4)
+
+#loocv function: input is matrix of predictors X and outcome vector y
+LOOCV <- function(X, y) {
+  squared_errors <- rep(NA, length(y))
+  y_pred <- rep(NA, length(y))
+  beta <- matrix(NA, nrow=length(y),ncol = dim(X[drop=F])[2]+1)
+  for (i in 1:length(y)) {
+    y_pred[i] <- c(1, X[i, ]) %*% lm(y[-i] ~ X[-i, ])$coef 
+    squared_errors[i] <- (y[i] - y_pred[i])^2
+    beta[i,]<-lm(y[-i] ~ X[-i, ])$coef
+  }
+  return(mean(squared_errors))
+}
+
+y = unlist(read.table("TITER2008_centered.txt"))
+
+MSE = c()
+predictors = c()
+
+for(i in 1:length(comb)) {
+  MSE <- append(MSE, LOOCV(df[,comb[[i]], drop=F], y))
+  predictors <- append(predictors, paste(comb[[i]], collapse=", "))
+}
+
+df2a <- data.frame(predictors, MSE)
+```
+
+```{r}
+df2a <- df2a[order(df2a$MSE), ]
+head(df2a, 10)
+```
+```{r}
+hist(df2a$MSE,
+main="Distribution MSE",
+xlab="MSE",
+)
+```
+
+Fit the selected regression model to the data. Report the regression coefficients.
+
+```{r}
+
+summary(lm(y ~ V10 + V13 + V17, data = as.data.frame(df)))
+```
+
+### 2b. ESTIMATION OF THE PREDICTION ERROR (nested leave-one-out cross-validation)
+
+Report pseudo-code for the nested leave-one-out cross-validation procedure.
+
+```{=latex}
+\begin{algorithm}[H]
+\DontPrintSemicolon
+\SetAlgoLined
+\SetKwInOut{Input}{Input}\SetKwInOut{Output}{Output}
+\Input{Dataset DS}
+\BlankLine
+$nrow$: number of rows of $DS$\; 
+split $DS$ into $nrow$ folds\;
+  \For{$i = 0;\ i < $nrow$;\ i++$}{
+    $test outer$ = ith fold\;
+    $train outer$ = all folds except ith fold\;
+    split $train outer$ into $nrow$-1 folds\;
+      \For{$j = 0;\ j < $nrow$-1;\ j++$}{
+        $test inner$ = jth fold\;
+        $train inner$ = all folds except jth fold and ith fold\;
+        train regression model on $train inner$\;
+        compute SEE\;
+        }
+    Compute MSE\;
+  }
+\caption{Nested Leave-One-Out Cross Validation}
+\end{algorithm} 
+```
+
+
